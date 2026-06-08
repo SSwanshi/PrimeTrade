@@ -28,11 +28,17 @@ router.post('/register', async (req, res) => {
 });
 
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, role } = req.body;
   const user = await prisma.user.findUnique({ where: { email } });
-  
+
   if (!user || !(await bcrypt.compare(password, user.password))) {
     return res.status(401).json({ error: 'Invalid credentials' });
+  }
+
+  if (role && user.role !== role) {
+    return res.status(401).json({
+      error: `This account is not a ${role}. Select the correct account type or use the matching demo email.`,
+    });
   }
 
   const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET as string, { expiresIn: '1d' });

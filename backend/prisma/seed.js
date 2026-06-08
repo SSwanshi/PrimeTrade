@@ -1,18 +1,40 @@
 // prisma/seed.js
 
 const { PrismaClient } = require("@prisma/client");
+const bcrypt = require("bcryptjs");
 
 const prisma = new PrismaClient();
 
 async function main() {
-  // Get first existing user
-  const user = await prisma.user.findFirst();
+  const demoPassword = await bcrypt.hash("password123", 10);
 
-  if (!user) {
-    throw new Error("No user found in database");
-  }
+  const demoUser = await prisma.user.upsert({
+    where: { email: "user@primetrade.com" },
+    update: {},
+    create: {
+      email: "user@primetrade.com",
+      password: demoPassword,
+      name: "Demo User",
+      role: "USER",
+      portfolio: { create: { balance: 10000 } },
+    },
+    include: { portfolio: true },
+  });
 
-  console.log(`Using user: ${user.email}`);
+  await prisma.user.upsert({
+    where: { email: "admin@primetrade.com" },
+    update: {},
+    create: {
+      email: "admin@primetrade.com",
+      password: demoPassword,
+      name: "Demo Admin",
+      role: "ADMIN",
+      portfolio: { create: { balance: 10000 } },
+    },
+  });
+
+  const user = demoUser;
+  console.log(`Using demo user: ${user.email}`);
 
   // Portfolio
   await prisma.portfolio.upsert({

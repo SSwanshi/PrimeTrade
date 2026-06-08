@@ -1,7 +1,51 @@
 import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
-import axios from 'axios';
-import { LogIn, UserPlus, Home, Settings, LogOut, Package, Wallet, TrendingUp } from 'lucide-react';
+import axios, { isAxiosError } from 'axios';
+import { LogIn, UserPlus, Home, Settings, LogOut, Package, Wallet, TrendingUp, Briefcase } from 'lucide-react';
+
+type Role = 'USER' | 'ADMIN';
+type OrderSide = 'BUY' | 'SELL';
+type OrderStatus = 'PENDING' | 'FILLED' | 'CANCELLED';
+
+type User = {
+  id: string;
+  email: string;
+  name: string;
+  role: Role;
+};
+
+type Portfolio = {
+  id: string;
+  userId: string;
+  balance: number;
+};
+
+type Asset = {
+  id: string;
+  symbol: string;
+  name: string;
+  price: number;
+  type: string;
+};
+
+type Order = {
+  id: string;
+  userId: string;
+  assetId: string;
+  side: OrderSide;
+  quantity: number;
+  price: number;
+  status: OrderStatus;
+  createdAt: string;
+  asset?: Asset;
+};
+
+type LoginResponse = {
+  token: string;
+  user: User;
+};
+
+type SetAuth = (user: User) => void;
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -12,20 +56,27 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+const getApiError = (err: unknown, fallback: string) => {
+  if (isAxiosError<{ error?: string }>(err)) {
+    return err.response?.data?.error || fallback;
+  }
+  return fallback;
+};
+
 // Components
-const Login = ({ setAuth }: any) => {
+const Login = ({ setAuth }: { setAuth: SetAuth }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const submit = async (e: any) => {
+  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     try {
-      const res = await api.post('/auth/login', { email, password });
+      const res = await api.post<LoginResponse>('/auth/login', { email, password });
       localStorage.setItem('token', res.data.token);
       localStorage.setItem('user', JSON.stringify(res.data.user));
       setAuth(res.data.user);
-    } catch (err) {
+    } catch {
       setError('Login failed. Check credentials.');
     }
   };
@@ -44,19 +95,19 @@ const Login = ({ setAuth }: any) => {
   );
 };
 
-const Register = ({ setAuth }: any) => {
+const Register = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState('USER');
+  const [role, setRole] = useState<Role>('USER');
   const [error, setError] = useState('');
 
-  const submit = async (e: any) => {
+  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     try {
       await api.post('/auth/register', { email, password, name, role });
       window.location.href = '/login';
-    } catch (err) {
+    } catch {
       setError('Registration failed.');
     }
   };
@@ -69,7 +120,7 @@ const Register = ({ setAuth }: any) => {
         <input className="w-full border border-gray-300 p-2 mb-4 rounded" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required />
         <input className="w-full border border-gray-300 p-2 mb-4 rounded" placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         <input className="w-full border border-gray-300 p-2 mb-4 rounded" placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-        <select className="w-full border border-gray-300 p-2 mb-6 rounded" value={role} onChange={(e) => setRole(e.target.value)}>
+        <select className="w-full border border-gray-300 p-2 mb-6 rounded" value={role} onChange={(e) => setRole(e.target.value as Role)}>
           <option value="USER">User (Trader)</option>
           <option value="ADMIN">Administrator</option>
         </select>
@@ -80,18 +131,75 @@ const Register = ({ setAuth }: any) => {
   );
 };
 
-const Dashboard = ({ user }: any) => {
-  const [portfolio, setPortfolio] = React.useState<any>(null);
-  const [assets, setAssets] = React.useState<any[]>([]);
-  const [orders, setOrders] = React.useState<any[]>([]);
+type Holding = {
+  assetId: string;
+  symbol: string;
+  name: string;
+  quantity: number;
+  price: number;
+  value: number;
+};
+
+const MyHoldings = ({
+  holdings,
+  onEditQty,
+}: {
+  holdings: Holding[];
+  onEditQty: (assetId: string, currentQty: number) => void;
+}) => (
+  <div className="bg-white border border-gray-200 rounded p-6">
+    <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+      <Briefcase /> My Holdings
+    </h2>
+    {holdings.length === 0 ? (
+      <p className="text-gray-500 text-sm">You don't own any stocks yet. Buy assets to build your portfolio.</p>
+    ) : (
+      <div className="space-y-3">
+        {holdings.map((holding) => (
+          <div
+            key={holding.assetId}
+            className="flex justify-between items-center bg-gray-50 p-4 border border-gray-100 rounded"
+          >
+            <div>
+              <span className="font-bold">{holding.symbol}</span>
+              <span className="text-gray-500"> — {holding.name}</span>
+              <div className="text-sm text-gray-500 mt-1">
+                {holding.quantity} share{holding.quantity !== 1 ? 's' : ''} @ ${holding.price.toFixed(2)}
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="font-bold text-lg">${holding.value.toFixed(2)}</p>
+              <p className="text-xs text-gray-500">market value</p>
+              <button
+                onClick={() => onEditQty(holding.assetId, holding.quantity)}
+                className="text-blue-600 text-sm hover:underline mt-2"
+              >
+                Edit Qty
+              </button>
+            </div>
+          </div>
+        ))}
+        <div className="flex justify-between items-center pt-3 border-t border-gray-200 font-semibold">
+          <span>Total Holdings Value</span>
+          <span>${holdings.reduce((sum, h) => sum + h.value, 0).toFixed(2)}</span>
+        </div>
+      </div>
+    )}
+  </div>
+);
+
+const Dashboard = () => {
+  const [portfolio, setPortfolio] = React.useState<Portfolio | null>(null);
+  const [assets, setAssets] = React.useState<Asset[]>([]);
+  const [orders, setOrders] = React.useState<Order[]>([]);
 
   React.useEffect(() => {
     const fetchData = async () => {
       try {
         const [portRes, assetRes, orderRes] = await Promise.all([
-          api.get('/portfolio'),
-          api.get('/assets'),
-          api.get('/orders/my-orders')
+          api.get<Portfolio>('/portfolio'),
+          api.get<Asset[]>('/assets'),
+          api.get<Order[]>('/orders/my-orders'),
         ]);
         setPortfolio(portRes.data);
         setAssets(assetRes.data);
@@ -103,31 +211,69 @@ const Dashboard = ({ user }: any) => {
     fetchData();
   }, []);
 
-  const placeOrder = async (assetId: string, type: string) => {
+  const placeOrder = async (assetId: string, side: OrderSide) => {
     try {
-      await api.post('/orders', { assetId, side: type, quantity: 1 });
+      await api.post('/orders', { assetId, side, quantity: 1 });
       alert('Order placed successfully');
       window.location.reload();
-    } catch (err: any) {
-      alert(err.response?.data?.error || 'Order failed');
+    } catch (err) {
+      alert(getApiError(err, 'Order failed'));
     }
   };
 
   const getOwnedQuantity = (assetId: string) => {
     return orders
-      .filter((o: any) => o.assetId === assetId && o.status === 'FILLED')
-      .reduce((acc: number, o: any) => o.side === 'BUY' ? acc + o.quantity : acc - o.quantity, 0);
+      .filter((o) => o.assetId === assetId && o.status === 'FILLED')
+      .reduce((acc, o) => (o.side === 'BUY' ? acc + o.quantity : acc - o.quantity), 0);
   };
 
-  const updateOrder = async (id: string, currentQty: number) => {
-    const quantity = prompt('Enter new quantity:', currentQty.toString());
-    if (!quantity || parseFloat(quantity) <= 0) return;
+  const holdings: Holding[] = assets
+    .map((asset) => {
+      const quantity = getOwnedQuantity(asset.id);
+      return {
+        assetId: asset.id,
+        symbol: asset.symbol,
+        name: asset.name,
+        quantity,
+        price: asset.price,
+        value: quantity * asset.price,
+      };
+    })
+    .filter((h) => h.quantity > 0);
+
+  const updateOrder = async (id: string, quantity: number) => {
     try {
-      await api.put(`/orders/${id}`, { quantity: parseFloat(quantity) });
+      await api.put(`/orders/${id}`, { quantity });
       window.location.reload();
-    } catch (err: any) { 
-      alert(err.response?.data?.error || 'Order update failed'); 
+    } catch (err) {
+      alert(getApiError(err, 'Order update failed'));
     }
+  };
+
+  const updateHoldingQuantity = async (assetId: string, currentQty: number) => {
+    const input = prompt('Enter new quantity:', currentQty.toString());
+    if (!input || parseFloat(input) <= 0) return;
+
+    const newHoldingQty = parseFloat(input);
+    const delta = newHoldingQty - currentQty;
+    if (delta === 0) return;
+
+    const buyOrder = orders
+      .filter((o) => o.assetId === assetId && o.side === 'BUY' && o.status === 'FILLED')
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+
+    if (!buyOrder) {
+      alert('No buy order found for this holding.');
+      return;
+    }
+
+    const newOrderQty = buyOrder.quantity + delta;
+    if (newOrderQty <= 0) {
+      alert('Cannot reduce quantity that much.');
+      return;
+    }
+
+    await updateOrder(buyOrder.id, newOrderQty);
   };
 
   const cancelOrder = async (id: string) => {
@@ -148,6 +294,10 @@ const Dashboard = ({ user }: any) => {
           <h2 className="text-gray-500 font-semibold">Portfolio Balance</h2>
           <p className="text-3xl font-bold mt-2">${portfolio?.balance?.toFixed(2) || '0.00'}</p>
         </div>
+      </div>
+
+      <div className="mb-8">
+        <MyHoldings holdings={holdings} onEditQty={updateHoldingQuantity} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -173,7 +323,7 @@ const Dashboard = ({ user }: any) => {
         </div>
 
         <div className="bg-white border border-gray-200 rounded p-6">
-          <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Package /> My Orders</h2>
+          <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Package /> My Transaction History</h2>
           <div className="space-y-4">
             {orders.map((order) => (
               <div key={order.id} className="flex justify-between items-center bg-gray-50 p-4 border border-gray-100 rounded">
@@ -183,8 +333,7 @@ const Dashboard = ({ user }: any) => {
                 </div>
                 <div>
                   <span className="bg-gray-200 text-gray-700 text-xs px-2 py-1 rounded font-semibold uppercase">{order.status}</span>
-                  <div className="mt-2 flex gap-2">
-                    <button onClick={() => updateOrder(order.id, order.quantity)} className="text-blue-600 text-sm hover:underline">Edit Qty</button>
+                  <div className="mt-2">
                     <button onClick={() => cancelOrder(order.id)} className="text-red-600 text-sm hover:underline">Cancel</button>
                   </div>
                 </div>
@@ -197,20 +346,22 @@ const Dashboard = ({ user }: any) => {
   );
 };
 
+type AdminUser = User & { createdAt: string };
+
 const AdminPanel = () => {
-  const [assets, setAssets] = React.useState<any[]>([]);
-  const [users, setUsers] = React.useState<any[]>([]);
+  const [assets, setAssets] = React.useState<Asset[]>([]);
+  const [users, setUsers] = React.useState<AdminUser[]>([]);
   const [symbol, setSymbol] = useState('');
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
-  const [type, setType] = useState('Crypto');
+  const assetType = 'Crypto';
 
   React.useEffect(() => {
     const fetchData = async () => {
       try {
         const [assetRes, userRes] = await Promise.all([
-          api.get('/assets'),
-          api.get('/users')
+          api.get<Asset[]>('/assets'),
+          api.get<AdminUser[]>('/users'),
         ]);
         setAssets(assetRes.data);
         setUsers(userRes.data);
@@ -221,12 +372,12 @@ const AdminPanel = () => {
     fetchData();
   }, []);
 
-  const createAsset = async (e: any) => {
+  const createAsset = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     try {
-      await api.post('/assets', { symbol, name, price: parseFloat(price), type });
+      await api.post('/assets', { symbol, name, price: parseFloat(price), type: assetType });
       window.location.reload();
-    } catch (err) {
+    } catch {
       alert('Failed to create asset');
     }
   };
@@ -245,7 +396,7 @@ const AdminPanel = () => {
     try {
       await api.delete(`/assets/${id}`);
       window.location.reload();
-    } catch (err) {
+    } catch {
       alert('Failed to delete asset');
     }
   };
@@ -329,9 +480,9 @@ const AdminPanel = () => {
 };
 
 export default function App() {
-  const [user, setUser] = useState<any>(() => {
+  const [user, setUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('user');
-    return saved ? JSON.parse(saved) : null;
+    return saved ? (JSON.parse(saved) as User) : null;
   });
 
   const logout = () => {
@@ -367,8 +518,8 @@ export default function App() {
         <main className="flex-grow flex flex-col w-full">
           <Routes>
             <Route path="/login" element={!user ? <Login setAuth={setUser} /> : <Navigate to={user.role === 'ADMIN' ? "/admin" : "/dashboard"} />} />
-            <Route path="/register" element={!user ? <Register setAuth={setUser} /> : <Navigate to={user.role === 'ADMIN' ? "/admin" : "/dashboard"} />} />
-            <Route path="/dashboard" element={user && user.role !== 'ADMIN' ? <Dashboard user={user} /> : <Navigate to={user?.role === 'ADMIN' ? "/admin" : "/login"} />} />
+            <Route path="/register" element={!user ? <Register /> : <Navigate to={user.role === 'ADMIN' ? "/admin" : "/dashboard"} />} />
+            <Route path="/dashboard" element={user && user.role !== 'ADMIN' ? <Dashboard /> : <Navigate to={user?.role === 'ADMIN' ? "/admin" : "/login"} />} />
             <Route path="/admin" element={user?.role === 'ADMIN' ? <AdminPanel /> : <Navigate to="/dashboard" />} />
             <Route path="*" element={<Navigate to={user ? (user.role === 'ADMIN' ? "/admin" : "/dashboard") : "/login"} />} />
           </Routes>
