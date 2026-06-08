@@ -15,9 +15,16 @@ type User = {
 };
 
 type Portfolio = {
-  id: string;
-  userId: string;
+  id?: string;
+  userId?: string;
   balance: number;
+};
+
+type DashboardResponse = {
+  portfolio: Portfolio;
+  assets: Asset[];
+  orders: Order[];
+  cached?: boolean;
 };
 
 type Asset = {
@@ -196,14 +203,10 @@ const Dashboard = () => {
   React.useEffect(() => {
     const fetchData = async () => {
       try {
-        const [portRes, assetRes, orderRes] = await Promise.all([
-          api.get<Portfolio>('/portfolio'),
-          api.get<Asset[]>('/assets'),
-          api.get<Order[]>('/orders/my-orders'),
-        ]);
-        setPortfolio(portRes.data);
-        setAssets(assetRes.data);
-        setOrders(orderRes.data);
+        const res = await api.get<DashboardResponse>('/dashboard');
+        setPortfolio(res.data.portfolio);
+        setAssets(res.data.assets);
+        setOrders(res.data.orders);
       } catch (err) {
         console.error(err);
       }

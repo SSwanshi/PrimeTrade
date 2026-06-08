@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../db';
 import { authenticateToken, AuthRequest, requireAdmin } from '../middleware/auth';
+import { invalidateUserDashboard } from '../cache/dashboard';
 
 const router = Router();
 
@@ -29,6 +30,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res) => {
           data: { userId, assetId, side, quantity, price: asset.price, status: 'FILLED' }
         })
       ]);
+      await invalidateUserDashboard(userId);
       res.json({ success: true, message: 'Order created and filled' });
     } else if (side === 'SELL') {
       const userOrders = await prisma.order.findMany({
@@ -55,6 +57,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res) => {
           data: { userId, assetId, side, quantity, price: asset.price, status: 'FILLED' }
         })
       ]);
+      await invalidateUserDashboard(userId);
       res.json({ success: true, message: 'Order created and filled' });
     } else {
       res.status(400).json({ error: 'Invalid side' });
@@ -134,6 +137,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res) => {
       ]);
     }
 
+    await invalidateUserDashboard(userId);
     res.json({ success: true, message: 'Order updated' });
   } catch (error) {
     res.status(400).json({ error: 'Order update failed' });
@@ -141,8 +145,10 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res) => {
 });
 
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res) => {
+  const userId = req.user.id;
   try {
     await prisma.order.delete({ where: { id: req.params.id as string }});
+    await invalidateUserDashboard(userId);
     res.json({ success: true });
   } catch (error) {
     res.status(400).json({ error: 'Order delete failed' });

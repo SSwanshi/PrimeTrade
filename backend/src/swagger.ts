@@ -18,6 +18,7 @@ const swaggerDocument = {
   ],
   tags: [
     { name: 'Auth', description: 'Registration and login' },
+    { name: 'Dashboard', description: 'Cached user dashboard data (portfolio, assets, orders)' },
     { name: 'Portfolio', description: 'User portfolio balance' },
     { name: 'Assets', description: 'Tradable assets' },
     { name: 'Orders', description: 'Buy/sell orders and order management' },
@@ -135,6 +136,24 @@ const swaggerDocument = {
           id: { type: 'string', format: 'uuid' },
           userId: { type: 'string', format: 'uuid' },
           balance: { type: 'number', format: 'float', example: 10000 },
+        },
+      },
+      DashboardResponse: {
+        type: 'object',
+        properties: {
+          portfolio: { $ref: '#/components/schemas/Portfolio' },
+          assets: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/Asset' },
+          },
+          orders: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/Order' },
+          },
+          cached: {
+            type: 'boolean',
+            description: 'True when served from Upstash Redis cache',
+          },
         },
       },
       Asset: {
@@ -285,6 +304,43 @@ const swaggerDocument = {
           },
           '401': {
             description: 'Invalid credentials',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Error' },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/api/dashboard': {
+      get: {
+        tags: ['Dashboard'],
+        summary: 'Get cached user dashboard',
+        description:
+          'Returns portfolio, assets, and orders in one request. ' +
+          'Cached in Upstash Redis per user (TTL configurable via DASHBOARD_CACHE_TTL_SECONDS). ' +
+          'Response header X-Cache is HIT or MISS.',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Dashboard data for the authenticated user',
+            headers: {
+              'X-Cache': {
+                schema: { type: 'string', enum: ['HIT', 'MISS'] },
+                description: 'Whether the response was served from Redis',
+              },
+            },
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/DashboardResponse' },
+              },
+            },
+          },
+          '401': { description: 'Missing or invalid token' },
+          '403': { description: 'Token expired or invalid' },
+          '500': {
+            description: 'Failed to load dashboard',
             content: {
               'application/json': {
                 schema: { $ref: '#/components/schemas/Error' },

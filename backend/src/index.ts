@@ -7,6 +7,7 @@ import assetRoutes from './routes/assets';
 import orderRoutes from './routes/orders';
 import userRoutes from './routes/users';
 import portfolioRoutes from './routes/portfolio';
+import dashboardRoutes from './routes/dashboard';
 import swaggerUi from 'swagger-ui-express';
 import swaggerDocument from './swagger';
 
@@ -37,6 +38,7 @@ app.use('/api/assets', assetRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/portfolio', portfolioRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {
