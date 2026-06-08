@@ -113,6 +113,31 @@ const Dashboard = ({ user }: any) => {
     }
   };
 
+  const getOwnedQuantity = (assetId: string) => {
+    return orders
+      .filter((o: any) => o.assetId === assetId && o.status === 'FILLED')
+      .reduce((acc: number, o: any) => o.side === 'BUY' ? acc + o.quantity : acc - o.quantity, 0);
+  };
+
+  const updateOrder = async (id: string, currentQty: number) => {
+    const quantity = prompt('Enter new quantity:', currentQty.toString());
+    if (!quantity || parseFloat(quantity) <= 0) return;
+    try {
+      await api.put(`/orders/${id}`, { quantity: parseFloat(quantity) });
+      window.location.reload();
+    } catch (err: any) { 
+      alert(err.response?.data?.error || 'Order update failed'); 
+    }
+  };
+
+  const cancelOrder = async (id: string) => {
+    if (!window.confirm('Cancel this order?')) return;
+    try {
+      await api.delete(`/orders/${id}`);
+      window.location.reload();
+    } catch { alert('Order cancellation failed'); }
+  };
+
   return (
     <div className="p-6 text-black bg-gray-50 min-h-screen">
       <h1 className="text-3xl font-bold mb-6 flex items-center gap-2"><Home /> Dashboard</h1>
@@ -129,18 +154,21 @@ const Dashboard = ({ user }: any) => {
         <div className="bg-white border border-gray-200 rounded p-6">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><TrendingUp /> Trade Assets</h2>
           <div className="space-y-4">
-            {assets.map((asset) => (
-              <div key={asset.id} className="flex justify-between items-center bg-gray-50 p-4 border border-gray-100 rounded">
-                <div>
-                  <span className="font-bold">{asset.symbol}</span> - <span className="text-gray-500">{asset.name}</span>
-                  <div className="text-sm text-gray-500 mt-1">${asset.price.toFixed(2)}</div>
+            {assets.map((asset) => {
+              const ownedQty = getOwnedQuantity(asset.id);
+              return (
+                <div key={asset.id} className="flex justify-between items-center bg-gray-50 p-4 border border-gray-100 rounded">
+                  <div>
+                    <span className="font-bold">{asset.symbol}</span> - <span className="text-gray-500">{asset.name}</span>
+                    <div className="text-sm text-gray-500 mt-1">Price: ${asset.price.toFixed(2)} | Owned: {ownedQty}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => placeOrder(asset.id, 'BUY')} className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">Buy 1</button>
+                    <button onClick={() => placeOrder(asset.id, 'SELL')} disabled={ownedQty < 1} className={`px-4 py-2 rounded text-sm ${ownedQty < 1 ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-red-600 text-white hover:bg-red-700'}`}>Sell 1</button>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={() => placeOrder(asset.id, 'BUY')} className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">Buy 1</button>
-                  <button onClick={() => placeOrder(asset.id, 'SELL')} className="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700">Sell 1</button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -155,6 +183,10 @@ const Dashboard = ({ user }: any) => {
                 </div>
                 <div>
                   <span className="bg-gray-200 text-gray-700 text-xs px-2 py-1 rounded font-semibold uppercase">{order.status}</span>
+                  <div className="mt-2 flex gap-2">
+                    <button onClick={() => updateOrder(order.id, order.quantity)} className="text-blue-600 text-sm hover:underline">Edit Qty</button>
+                    <button onClick={() => cancelOrder(order.id)} className="text-red-600 text-sm hover:underline">Cancel</button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -167,21 +199,26 @@ const Dashboard = ({ user }: any) => {
 
 const AdminPanel = () => {
   const [assets, setAssets] = React.useState<any[]>([]);
+  const [users, setUsers] = React.useState<any[]>([]);
   const [symbol, setSymbol] = useState('');
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [type, setType] = useState('Crypto');
 
   React.useEffect(() => {
-    const fetchAssets = async () => {
+    const fetchData = async () => {
       try {
-        const res = await api.get('/assets');
-        setAssets(res.data);
+        const [assetRes, userRes] = await Promise.all([
+          api.get('/assets'),
+          api.get('/users')
+        ]);
+        setAssets(assetRes.data);
+        setUsers(userRes.data);
       } catch (err) {
         console.error(err);
       }
     };
-    fetchAssets();
+    fetchData();
   }, []);
 
   const createAsset = async (e: any) => {
@@ -194,6 +231,15 @@ const AdminPanel = () => {
     }
   };
 
+  const updateAsset = async (id: string, currentPrice: number) => {
+    const newPrice = prompt('Enter new price:', currentPrice.toString());
+    if (!newPrice) return;
+    try {
+      await api.put(`/assets/${id}`, { price: parseFloat(newPrice) });
+      window.location.reload();
+    } catch { alert('Failed to update asset'); }
+  };
+
   const deleteAsset = async (id: string) => {
     if (!window.confirm('Delete this asset?')) return;
     try {
@@ -202,6 +248,14 @@ const AdminPanel = () => {
     } catch (err) {
       alert('Failed to delete asset');
     }
+  };
+
+  const deleteUser = async (id: string) => {
+    if (!window.confirm('Delete this user?')) return;
+    try {
+      await api.delete(`/users/${id}`);
+      window.location.reload();
+    } catch { alert('Failed to delete user'); }
   };
 
   return (
@@ -236,7 +290,34 @@ const AdminPanel = () => {
                 <td className="p-3">{asset.name}</td>
                 <td className="p-3">${asset.price.toFixed(2)}</td>
                 <td className="p-3">
+                  <button onClick={() => updateAsset(asset.id, asset.price)} className="text-blue-600 hover:underline mr-4">Edit</button>
                   <button onClick={() => deleteAsset(asset.id)} className="text-red-600 hover:underline">Delete</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="bg-white border border-gray-200 p-6 rounded mt-8 mb-8">
+        <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><UserPlus /> Manage Users</h2>
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="bg-gray-100">
+              <th className="border-b p-3">Name</th>
+              <th className="border-b p-3">Email</th>
+              <th className="border-b p-3">Role</th>
+              <th className="border-b p-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map((u) => (
+              <tr key={u.id} className="border-b">
+                <td className="p-3 font-bold">{u.name}</td>
+                <td className="p-3">{u.email}</td>
+                <td className="p-3">{u.role}</td>
+                <td className="p-3">
+                  <button onClick={() => deleteUser(u.id)} className="text-red-600 hover:underline">Delete</button>
                 </td>
               </tr>
             ))}
@@ -268,7 +349,9 @@ export default function App() {
               <TrendingUp /> PrimeTrade
             </div>
             <nav className="flex items-center gap-6">
-              <Link to="/dashboard" className="text-gray-600 hover:text-gray-900 font-medium">Dashboard</Link>
+              {user.role !== 'ADMIN' && (
+                <Link to="/dashboard" className="text-gray-600 hover:text-gray-900 font-medium">Dashboard</Link>
+              )}
               {user.role === 'ADMIN' && (
                 <Link to="/admin" className="text-gray-600 hover:text-gray-900 font-medium">Admin Panel</Link>
               )}
@@ -283,11 +366,11 @@ export default function App() {
         )}
         <main className="flex-grow flex flex-col w-full">
           <Routes>
-            <Route path="/login" element={!user ? <Login setAuth={setUser} /> : <Navigate to="/dashboard" />} />
-            <Route path="/register" element={!user ? <Register setAuth={setUser} /> : <Navigate to="/dashboard" />} />
-            <Route path="/dashboard" element={user ? <Dashboard user={user} /> : <Navigate to="/login" />} />
+            <Route path="/login" element={!user ? <Login setAuth={setUser} /> : <Navigate to={user.role === 'ADMIN' ? "/admin" : "/dashboard"} />} />
+            <Route path="/register" element={!user ? <Register setAuth={setUser} /> : <Navigate to={user.role === 'ADMIN' ? "/admin" : "/dashboard"} />} />
+            <Route path="/dashboard" element={user && user.role !== 'ADMIN' ? <Dashboard user={user} /> : <Navigate to={user?.role === 'ADMIN' ? "/admin" : "/login"} />} />
             <Route path="/admin" element={user?.role === 'ADMIN' ? <AdminPanel /> : <Navigate to="/dashboard" />} />
-            <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} />} />
+            <Route path="*" element={<Navigate to={user ? (user.role === 'ADMIN' ? "/admin" : "/dashboard") : "/login"} />} />
           </Routes>
         </main>
       </div>
