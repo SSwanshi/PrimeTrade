@@ -234,7 +234,7 @@ The fastest way to run the entire stack.
    |---------|-----|
    | Frontend | http://localhost:3000 |
    | Backend API | http://localhost:8000/api |
-   | Swagger Docs | http://localhost:3000/api-docs |
+   | Swagger Docs | http://localhost:8000/api-docs |
    | PostgreSQL | localhost:5432 |
 
 5. **Stop services**
